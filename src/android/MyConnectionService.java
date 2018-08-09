@@ -16,11 +16,15 @@ import android.os.Handler;
 import android.net.Uri;
 import java.util.ArrayList;
 import android.util.Log;
+import org.json.JSONObject;
+import org.json.JSONException;
 
 public class MyConnectionService extends ConnectionService {
 
     private static String TAG = "MyConnectionService";
     private static Connection conn;
+
+
 
     public static Connection getConnection() {
         return conn;
@@ -131,6 +135,23 @@ public class MyConnectionService extends ConnectionService {
             }
 
             @Override
+            public void onPlayDtmfTone(char c) {
+              Log.d("REMAC", Character.toString(c));
+              ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("dtmf");
+              for (final CallbackContext callbackContext : callbackContexts) {
+                  CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
+                      public void run() {
+                          PluginResult result = new PluginResult(PluginResult.Status.OK, Character.toString(c));
+                          result.setKeepCallback(true);
+                          callbackContext.sendPluginResult(result);
+                      }
+                  });
+              }
+
+              super.onPlayDtmfTone(c);
+            }
+
+            @Override
             public void onDisconnect() {
                 DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
                 this.setDisconnected(cause);
@@ -163,7 +184,29 @@ public class MyConnectionService extends ConnectionService {
               }
             }
         };
-        connection.setAddress(Uri.parse(request.getExtras().getString("to")), TelecomManager.PRESENTATION_ALLOWED);
+
+        JSONObject callResult = new JSONObject();
+
+        if(request.getExtras().getString("to") != null){
+          connection.setAddress(Uri.parse(request.getExtras().getString("to")), TelecomManager.PRESENTATION_ALLOWED);
+          try {
+            callResult.put("external", false);
+             callResult.put("to", request.getExtras().getString("to"));
+          } catch( JSONException e) {
+            Log.e("REMAC", "Json parsing error: " + e.getMessage());
+          }
+
+        } else {
+          Log.d("REMAC",request.toString());
+          connection.setAddress(request.getAddress(), TelecomManager.PRESENTATION_ALLOWED);
+          try {
+            callResult.put("external", true);
+            callResult.put("to", request.getAddress().toString());
+          } catch ( JSONException e) {
+            Log.e("REMAC", "Json parsing error: " + e.getMessage());
+          }
+        }
+
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {
             StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
@@ -176,7 +219,7 @@ public class MyConnectionService extends ConnectionService {
             for (final CallbackContext callbackContext : callbackContexts) {
                 CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
                     public void run() {
-                        PluginResult result = new PluginResult(PluginResult.Status.OK, "sendCall event called successfully");
+                        PluginResult result = new PluginResult(PluginResult.Status.OK, callResult);
                         result.setKeepCallback(true);
                         callbackContext.sendPluginResult(result);
                     }
